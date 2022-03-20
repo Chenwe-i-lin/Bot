@@ -53,16 +53,10 @@ sign = {
 }
 
 def defaultvalue(value, default):
-    if not value:
-        return default
-    else:
-        return value
+    return value or default
 
 def stringlimit(text, length=9):
-    if len(text) <= length:
-        return text
-    else:
-        return text[:length] + "......"
+    return text if len(text) <= length else f'{text[:length]}......'
 
 def test(i):
     return datetime.datetime.fromtimestamp(i['now'] + i['sec'])
@@ -72,7 +66,7 @@ def smarttime(timestamp):
     num = timestamp
     num1 = 0
     result = {}
-    for i in unit.keys():
+    for i in unit:
         num1 = num
         num = num % unit[i]
         result[i] = (num1 - num) / unit[i]
@@ -87,8 +81,7 @@ async def callme(context):
         return "正则匹配失败, 你可能使用了错误的时间格式."
     signedMap = {sign: number for number, sign in matched}
     try:
-        sec = sum([sign[i] * int(signedMap[i])
-                   for i in signedMap.keys()])  # 缓存保存的时间(秒)
+        sec = sum(sign[i] * int(signedMap[i]) for i in signedMap)
     except KeyError:
         return "拼写错误的时间单位."
 
@@ -97,12 +90,19 @@ async def callme(context):
             cache.set(context.get("group_id"), type(
                 str(context.get("group_id")), (Cache,), {})())
 
-        cache.get(context.get("group_id")).set(context['user_id'], {
-            "user_id": context['user_id'],
-            "card": context['sender']['card'] if context['sender']['card'] else context['sender']['nickname'] if context['sender']['nickname'] else context['sender']['id'],
-            "sec": sec,
-            "now": time.time()
-        }, ttl=sec)
+        cache.get(context.get("group_id")).set(
+            context['user_id'],
+            {
+                "user_id": context['user_id'],
+                "card": context['sender']['card']
+                or context['sender']['nickname']
+                or context['sender']['id'],
+                "sec": sec,
+                "now": time.time(),
+            },
+            ttl=sec,
+        )
+
         return """已加入等候列表, 现有:
 {0}
 正在等待联机.""".format("\n".join(["{card}(还能等待{time})".format(
@@ -114,99 +114,101 @@ async def callme(context):
         return "本指令不支持私人聊天."
 
 async def call(context):
-    if context.get("group_id"):
-        if not cache.get(context.get("group_id")):
-            cache.set(context.get("group_id"), type(
-                str(context.get("group_id")), (Cache,), {})())
-
-        if not list(cache.get(context.get("group_id")).values()):
-            return "现在没人联机了, 自己发起吧."
-
-        shouldBe = True
-        tick = 0
-        while shouldBe and tick < 8:
-            result = random.choice(
-                list(cache.get(context.get("group_id")).values()))
-            if result['user_id'] != context['user_id']:
-                shouldBe = False
-            tick += 1
-        if tick >= 8 and shouldBe:
-            return "错误: 等待列表中可能只有你一个人吧= ="
-        return "".join([
-            str(MessageSegment.at(result['user_id'])),
-            ", ",
-            str(MessageSegment.at(context['user_id'])),
-            " 找你联机!"
-        ])
-    else:
+    if not context.get("group_id"):
         return "本指令不支持私人聊天."
+    if not cache.get(context.get("group_id")):
+        cache.set(context.get("group_id"), type(
+            str(context.get("group_id")), (Cache,), {})())
+
+    if not list(cache.get(context.get("group_id")).values()):
+        return "现在没人联机了, 自己发起吧."
+
+    shouldBe = True
+    tick = 0
+    while shouldBe and tick < 8:
+        result = random.choice(
+            list(cache.get(context.get("group_id")).values()))
+        if result['user_id'] != context['user_id']:
+            shouldBe = False
+        tick += 1
+    if tick >= 8 and shouldBe:
+        return "错误: 等待列表中可能只有你一个人吧= ="
+    return "".join([
+        str(MessageSegment.at(result['user_id'])),
+        ", ",
+        str(MessageSegment.at(context['user_id'])),
+        " 找你联机!"
+    ])
 
 async def play_list(context):
-    if context.get("group_id"):
-        if not cache.get(context.get("group_id")):
-            cache.set(context.get("group_id"), type(
-                str(context.get("group_id")), (Cache,), {})())
-
-        if not list(cache.get(context.get("group_id")).values()):
-            return "现在没人联机了, 自己发起吧."
-
-        return "\n".join([
-            "现有:",
-            "\n".join([
-                "{card}(还能等待{time})".format(
-                    card=stringlimit(i['card']),
-                    time="".join(["{v}{k}".format(v=round(v), k=k) for k, v in filter(lambda x: bool(x[1]), smarttime(
-                        (datetime.datetime.fromtimestamp(i['now'] + i['sec']) - datetime.datetime.now()).total_seconds()).items())])
-                ) for i in cache.get(context.get("group_id")).values()
-            ]),
-
-            "正在等待联机..."
-        ])
-    else:
+    if not context.get("group_id"):
         return "本指令不支持私人聊天."
+    if not cache.get(context.get("group_id")):
+        cache.set(context.get("group_id"), type(
+            str(context.get("group_id")), (Cache,), {})())
+
+    if not list(cache.get(context.get("group_id")).values()):
+        return "现在没人联机了, 自己发起吧."
+
+    return "\n".join([
+        "现有:",
+        "\n".join([
+            "{card}(还能等待{time})".format(
+                card=stringlimit(i['card']),
+                time="".join(["{v}{k}".format(v=round(v), k=k) for k, v in filter(lambda x: bool(x[1]), smarttime(
+                    (datetime.datetime.fromtimestamp(i['now'] + i['sec']) - datetime.datetime.now()).total_seconds()).items())])
+            ) for i in cache.get(context.get("group_id")).values()
+        ]),
+
+        "正在等待联机..."
+    ])
 
 async def leave(context):
-    if context.get("group_id"):
-        if not cache.get(context.get("group_id")):
-            cache.set(context.get("group_id"), type(
-                str(context.get("group_id")), (Cache,), {})())
-
-        if not cache.get(context.get("group_id")).get(context['user_id']):
-            return "没有查找到你的联机请求..."
-
-        cache.get(context.get("group_id")).delete(context['user_id'])
-        return "你已撤销你之前的联机请求."
-    else:
+    if not context.get("group_id"):
         return "本指令不支持私人聊天."
+    if not cache.get(context.get("group_id")):
+        cache.set(context.get("group_id"), type(
+            str(context.get("group_id")), (Cache,), {})())
+
+    if not cache.get(context.get("group_id")).get(context['user_id']):
+        return "没有查找到你的联机请求..."
+
+    cache.get(context.get("group_id")).delete(context['user_id'])
+    return "你已撤销你之前的联机请求."
 
 async def callall(context):
-    if context.get("group_id"):
-        wait_secs = 180
-        if not calllimit.get(context.get("group_id")):
-            calllimit.set(context.get("group_id"), {
-                "time": time.time()
-            }, ttl=wait_secs)
-        else:
-            return "本群暂时无法使用callall指令, 预计该指令将在{time}后可用.".format(
-                time="".join(["{v}{k}".format(v=round(v), k=k) for k, v in filter(lambda x: bool(x[1]), smarttime(
-                    (datetime.datetime.fromtimestamp(calllimit.get(context.get("group_id"))['time'] + wait_secs) - datetime.datetime.now()).total_seconds()).items())])
-            )
-
-        if not cache.get(context.get("group_id")):
-            return "该群内无任何请求被发出过."
-        for i in cache.get(context.get("group_id")).keys():
-            if shield.get("{group}_{user}".format(group=context.get("group_id"), user=i)):
-                continue
-            await bot.send_private_msg(user_id=i, message="在群 {group} 中, {sender_name}({sender_qq}) 向你发送了联机申请.".format(
-                group=(await bot._get_group_info(group_id=context.get("group_id")))['group_name'],
-                sender_name=context['sender']['card'] if context['sender']['card'] else context['sender'][
-                    'nickname'] if context['sender']['nickname'] else context['sender']['id'],
-                sender_qq=str(context['user_id'])
-            ))
-        return "已完成."
-
-    else:
+    if not context.get("group_id"):
         return "本指令不支持私人聊天."
+    wait_secs = 180
+    if not calllimit.get(context.get("group_id")):
+        calllimit.set(context.get("group_id"), {
+            "time": time.time()
+        }, ttl=wait_secs)
+    else:
+        return "本群暂时无法使用callall指令, 预计该指令将在{time}后可用.".format(
+            time="".join(["{v}{k}".format(v=round(v), k=k) for k, v in filter(lambda x: bool(x[1]), smarttime(
+                (datetime.datetime.fromtimestamp(calllimit.get(context.get("group_id"))['time'] + wait_secs) - datetime.datetime.now()).total_seconds()).items())])
+        )
+
+    if not cache.get(context.get("group_id")):
+        return "该群内无任何请求被发出过."
+    for i in cache.get(context.get("group_id")).keys():
+        if shield.get("{group}_{user}".format(group=context.get("group_id"), user=i)):
+            continue
+        await bot.send_private_msg(
+            user_id=i,
+            message="在群 {group} 中, {sender_name}({sender_qq}) 向你发送了联机申请.".format(
+                group=(
+                    await bot._get_group_info(group_id=context.get("group_id"))
+                )['group_name'],
+                sender_name=context['sender']['card']
+                or context['sender']['nickname']
+                or context['sender']['id'],
+                sender_qq=str(context['user_id']),
+            ),
+        )
+
+    return "已完成."
 
 def sec_summon(text):
     matched = re.findall(r"([0-9]{1,2})([a-zA-Z]{1,6})", text)
@@ -214,8 +216,7 @@ def sec_summon(text):
         return False
     signedMap = {sign: number for number, sign in matched}
     try:
-        sec = sum([sign[i] * int(signedMap[i])
-                   for i in signedMap.keys()])  # 缓存保存的时间(秒)
+        sec = sum(sign[i] * int(signedMap[i]) for i in signedMap)
     except KeyError:
         return False
     return sec
@@ -232,9 +233,6 @@ async def shielder(context):
         needupdate.update({i.split("=")[0]: i.split("=")[1] for i in splited[1:]})
         group = needupdate['group']
         wait = needupdate['wait']
-    else:
-        if not group:
-            return "无法确定你所指示的需要进行屏蔽操作的群."
     try:
         shield.set("{group}_{user}".format(group=group, user=context['user_id']), {
             "time": time.time()
@@ -276,8 +274,10 @@ commands = {
 
 @bot.on_message()
 async def handle_msg(context):
-    if context["message"].split(" ")[0][0] == "/":
-        if context["message"].split(" ")[0][1:] in commands:
-            return {"reply": await commands[context["message"].split(" ")[0][1:]](context), 'at_sender': False}
+    if (
+        context["message"].split(" ")[0][0] == "/"
+        and context["message"].split(" ")[0][1:] in commands
+    ):
+        return {"reply": await commands[context["message"].split(" ")[0][1:]](context), 'at_sender': False}
 
 bot.run("localhost", 8695)
